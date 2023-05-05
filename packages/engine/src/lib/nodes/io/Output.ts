@@ -1,18 +1,17 @@
 import Rete from 'rete'
 import { v4 as uuidv4 } from 'uuid'
 
+import { DropdownControl } from '../../dataControls/DropdownControl'
+import { SwitchControl } from '../../dataControls/SwitchControl'
+import { MagickComponent } from '../../engine'
+import { pluginManager } from '../../plugin'
+import { anySocket, eventSocket, triggerSocket } from '../../sockets'
 import {
-  EditorContext,
-  NodeData,
-  MagickNode,
+  EditorContext, MagickNode,
   MagickWorkerInputs,
   MagickWorkerOutputs,
+  WorkerData
 } from '../../types'
-import { DropdownControl } from '../../dataControls/DropdownControl'
-import { pluginManager } from '../../plugin'
-import { SwitchControl } from '../../dataControls/SwitchControl'
-import { triggerSocket, anySocket, eventSocket } from '../../sockets'
-import { MagickComponent } from '../../magick-component'
 const info = `The output component will pass values out from your spell.  You can have multiple outputs in a spell and all output values will be collected. It also has an option to send the output to the playtest area for easy testing.`
 
 const defaultOutputTypes = [{ name: 'Default', socket: anySocket }]
@@ -24,7 +23,7 @@ export class Output extends MagickComponent<void> {
     this.task = {
       runOneInput: true,
       outputs: {
-        text: 'output',
+        output: 'output',
         trigger: 'option',
       },
     }
@@ -93,15 +92,13 @@ export class Output extends MagickComponent<void> {
   }
 
   async worker(
-    node: NodeData,
+    node: WorkerData,
     inputs: MagickWorkerInputs,
     _outputs: MagickWorkerOutputs,
-    {
-      module,
-      magick,
-    }: { module: any; magick: EditorContext }
+    { module, magick }: { module: any; magick: EditorContext }
   ) {
-    if (!inputs.input) return console.error('No input provided to output component')
+    if (!inputs.input)
+      return console.error('No input provided to output component')
     const outputType = node.data.outputType
     const output = inputs.input.filter(Boolean)[0] as string
     const event =

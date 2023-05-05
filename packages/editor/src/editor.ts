@@ -1,37 +1,34 @@
 import ConnectionPlugin from 'rete-connection-plugin'
-import { Plugin } from 'rete/types/core/plugin'
-// import ConnectionReroutePlugin from 'rete-connection-reroute-plugin'
-import ContextMenuPlugin from './plugins/contextMenu'
 import { Data } from 'rete/types/core/data'
-import CommentPlugin from './plugins/commentPlugin'
-import { SelectionPlugin } from '@magickml/engine'
-import ReactRenderPlugin, {
-  ReactRenderPluginOptions,
-} from './plugins/reactRenderPlugin'
+import { Plugin } from 'rete/types/core/plugin'
 import gridimg from './grid.png'
+import CommentPlugin from './plugins/commentPlugin'
+import ContextMenuPlugin from './plugins/contextMenu'
+import { OnSubspellUpdated, PubSubCallback, PubSubContext, SelectionPlugin } from '@magickml/engine'
+import ReactRenderPlugin, {
+  ReactRenderPluginOptions
+} from './plugins/reactRenderPlugin'
 
 import {
-  // CachePlugin,
-  SocketPluginArgs,
   ConsolePlugin,
+  EditorContext,
+  getNodes,
   HistoryPlugin,
   InspectorPlugin,
   KeyCodePlugin,
   LifecyclePlugin,
+  MagickComponent,
+  MagickEditor,
   ModulePlugin,
+  ModulePluginArgs,
+  MultiCopyPlugin,
+  MultiSocketGenerator,
+  NodeClickPlugin,
   SocketGeneratorPlugin,
   SocketOverridePlugin,
   SocketPlugin,
-  TaskPlugin,
-  EditorContext,
-  MagickComponent,
-  getNodes,
-  MagickEditor,
-  MultiSocketGenerator,
-  NodeClickPlugin,
-  ModuleOptions,
-  MultiCopyPlugin,
-  ModulePluginArgs,
+  SocketPluginArgs,
+  TaskPlugin
 } from '@magickml/engine'
 
 import AreaPlugin from './plugins/areaPlugin'
@@ -58,7 +55,7 @@ export const initEditor = function ({
   client,
 }: {
   container: any
-  pubSub: any
+  pubSub: PubSubContext
   magick: any
   tab: any
   node: any
@@ -200,10 +197,11 @@ export const initEditor = function ({
   // ██╔═══╝ ██║   ██║██╔══██╗██║     ██║██║
   // ██║     ╚██████╔╝██████╔╝███████╗██║╚██████╗
   // ╚═╝      ╚═════╝ ╚═════╝ ╚══════╝╚═╝ ╚═════╝
-  editor.onSpellUpdated = (spellName: string, callback: () => void) => {
-    return magick.onSubspellUpdated(spellName, callback)
+  editor.onSpellUpdated = (spellId: string, callback: OnSubspellUpdated) => {
+    return magick.onSubspellUpdated(spellId, callback)
   }
 
+  // TODO: should this return a promise?
   editor.abort = async () => {
     await engine.abort()
   }

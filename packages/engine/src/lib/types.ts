@@ -1,19 +1,21 @@
-import { Connection, Input, NodeEditor, Output } from 'rete'
-import { Node } from 'rete/types'
+import PubSub from 'pubsub-js'
+import { Connection, Input, Node, NodeEditor, Output, Socket } from 'rete'
 import {
-  Data, WorkerOutputs
+  Data,
+  InputsData,
+  NodeData,
+  OutputsData,
+  WorkerOutputs
 } from 'rete/types/core/data'
-
-import { MagickComponent, MagickTask, PubSubContext } from './magick-component'
+import { MagickComponent } from './engine'
 import { MagickConsole } from './plugins/consolePlugin/MagickConsole'
 import { Inspector } from './plugins/inspectorPlugin/Inspector'
 import { ModuleManager } from './plugins/modulePlugin/module-manager'
 import { Task, TaskOutputTypes } from './plugins/taskPlugin/task'
 import { SocketNameType, SocketType } from './sockets'
 
-export { MagickComponent } from './magick-component'
-//@seang this was causing test enviroment issues to have it shared client/server
-// export { MagickEditor } from './src/editor'
+import { TaskSocketInfo } from './plugins/taskPlugin/task'
+
 export type { InspectorData } from './plugins/inspectorPlugin/Inspector'
 
 export type ImageType = {
@@ -27,6 +29,22 @@ export type ImageType = {
 
 export type ImageCacheResponse = {
   images: ImageType[]
+}
+
+export type Document = {
+  id?: number
+  type?: string
+  content?: string
+  owner?: string
+  embedding?: number[]
+  projectId?: string
+  date?: string
+}
+
+export type CreateDocumentArgs = Document
+
+export type GetDocumentArgs = Document & {
+  maxCount?: number
 }
 
 export type Event = {
@@ -65,7 +83,8 @@ export type GetEventArgs = {
   embedding?: number[]
   observer?: string
   client?: string
-  entities?: any[]
+  //TODO: entities not used anywhere
+  // entities?: any[]
   channel?: string
   channelType?: string
   projectId?: string
@@ -88,14 +107,22 @@ export type CompletionBody = {
   topP: number
   presencePenalty: number
   frequencyPenalty: number
+  // TODO: Type not used anywhere
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   stop: any
   apiKey?: string
 }
 
 export type CompletionResponse = {
+  // TODO: Type not used anywhere
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   success: any
+  // TODO: Type not used anywhere
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   choice: any
 }
+
+export type OnSubspellUpdated = (spell: Spell) => void
 
 export class MagickEditor extends NodeEditor<EventsTypes> {
   declare tasks: Task[]
@@ -105,8 +132,11 @@ export class MagickEditor extends NodeEditor<EventsTypes> {
   declare abort: unknown
   declare loadGraph: (graph: Data, relaoding?: boolean) => Promise<void>
   declare moduleManager: ModuleManager
-  declare runProcess: (callback?: Function | undefined) => Promise<void>
-  declare onSpellUpdated: (spellName: string, callback: Function) => Function
+  declare runProcess: (callback?: () => void | undefined) => Promise<void>
+  declare onSpellUpdated: (
+    spellName: string,
+    callback: (spell: Spell) => void
+  ) => () => void
   declare refreshEventTable: () => void
 }
 
@@ -114,51 +144,130 @@ export type Env = {
   API_ROOT_URL: string
 }
 
-type runSpellType = {
-  inputs: Record<string, any>
+export type UnknownData = Record<string, unknown>
+export type UnknownSpellData = UnknownData
+
+export type runSpellType<DataType = UnknownSpellData> = {
+  inputs: MagickSpellInput
+  spellId: string
+  projectId: string
+  secrets: Record<string, string>
+  publicVariables: DataType
+}
+export type SupportedLanguages = 'python' | 'javascript'
+
+export type GetSpell = ({
+  spellName,
+  projectId,
+}: {
   spellName: string
   projectId: string
-  secrets: Record<string, any>
-  publicVariables: Record<string, any>
-}
+}) => Promise<Spell>
 
-export type EngineContext = {
+export type ProcessCode = (
+  code: unknown,
+  inputs: MagickWorkerInputs,
+  data: UnknownSpellData,
+  language?: SupportedLanguages
+) => unknown | void
+
+export type RunSpell<DataType = Record<string, unknown>> = ({
+  inputs,
+  spellId,
+  projectId,
+  secrets,
+  publicVariables,
+}: runSpellType<DataType>) => Promise<DataType>
+
+export type EngineContext<DataType = Record<string, unknown>> = {
   env: Env
-  runSpell: ({
-    inputs,
-    spellName,
-    projectId,
-    secrets,
-    publicVariables
-  }: runSpellType) => Record<string, any>
+  runSpell: RunSpell<DataType>
   completion?: (body: CompletionBody) => Promise<CompletionResponse>
-  getSpell: ({
-    spellName,
-    projectId,
-  }: {
-    spellName: string
-    projectId: string
-  }) => Promise<any | Spell>
+  getSpell: GetSpell
   getCurrentSpell: () => Spell
-  processCode?: (
-    code: unknown,
-    inputs: MagickWorkerInputs,
-    data: Record<string, any>,
-    language?: string
-  ) => any | void
+  processCode?: ProcessCode
 }
 
-export type EventPayload = Record<string, any>
+export type PubSubEvents = {
+  ADD_SUBSPELL: string
+  UPDATE_SUBSPELL: string
+  DELETE_SUBSPELL: string
+  OPEN_TAB: string
+  $SUBSPELL_UPDATED: (spellName: string) => string
+  $TRIGGER: (tabId: string, nodeId?: string) => string
+  $PLAYTEST_INPUT: (tabId: string) => string
+  $PLAYTEST_PRINT: (tabId: string) => string
+  $DEBUG_PRINT: (tabId: string) => string
+  $DEBUG_INPUT: (tabId: string) => string
+  $INSPECTOR_SET: (tabId: string) => string
+  $TEXT_EDITOR_SET: (tabId: string) => string
+  $TEXT_EDITOR_CLEAR: (tabId: string) => string
+  $CLOSE_EDITOR: (tabId: string) => string
+  $NODE_SET: (tabId: string, nodeId: string) => string
+  $SAVE_SPELL: (tabId: string) => string
+  $SAVE_SPELL_DIFF: (tabId: string) => string
+  $CREATE_MESSAGE_REACTION_EDITOR: (tabId: string) => string
+  $CREATE_PLAYTEST: (tabId: string) => string
+  $CREATE_INSPECTOR: (tabId: string) => string
+  $CREATE_TEXT_EDITOR: (tabId: string) => string
+  $CREATE_AVATAR_WINDOW: (tabId: string) => string
+  $CREATE_DEBUG_CONSOLE: (tabId: string) => string
+  $CREATE_CONSOLE: (tabId: string) => string
+  $RUN_SPELL: (tabId: string) => string
+  $PROCESS: (tabId: string) => string
+  $EXPORT: (tabId: string) => string
+  $UNDO: (tabId: string) => string
+  $REDO: (tabId: string) => string
+  $DELETE: (tabId: string) => string
+  $MULTI_SELECT_COPY: (tabId: string) => string
+  $MULTI_SELECT_PASTE: (tabId: string) => string
+  $REFRESH_EVENT_TABLE: (tabId: string) => string
+  $SEND_TO_AVATAR: (tabId: string) => string
+}
+
+export interface PubSubContext {
+  publish: (event: string, data?: PubSubData) => boolean
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  subscribe(
+    event: string,
+    func: PubSubJS.SubscriptionListener<PubSubData>
+  ): () => void
+  PubSub: typeof PubSub
+  events: PubSubEvents
+}
+
+export type PubSubData = Record<string, unknown> | string | unknown[]
+export type PubSubCallback = (event: string, data: PubSubData) => void
+
+export type OnInspectorCallback = (data: Record<string, unknown>) => void
+export type OnInspector = (
+  node: MagickNode,
+  callback: OnInspectorCallback
+) => () => void
+export type OnEditorCallback = (data: PubSubData) => void
+export type OnEditor = (callback: OnEditorCallback) => () => void
+export type OnDebug = (
+  node: MagickNode,
+  callback: OnEditorCallback
+) => () => void
+
+export type PublishEditorEvent = (data: PubSubData) => void
 
 export interface EditorContext extends EngineContext {
-  sendToAvatar: (data: any) => void
-  onTrigger: (node: MagickNode | string, callback: Function) => Function
+  sendToAvatar: (data: unknown) => void
+  /**
+   * @deprecated The method should not be used
+   */
+  onTrigger: (
+    node: MagickNode | string,
+    callback: (data: unknown) => void
+  ) => () => void
   sendToPlaytest: (data: string) => void
-  sendToInspector: (data: EventPayload) => void
-  sendToDebug: (data: EventPayload) => void
-  onInspector: (node: MagickNode, callback: Function) => Function
-  onPlaytest: (callback: Function) => Function
-  onDebug: (node: NodeData, callback: Function) => Function
+  sendToInspector: PublishEditorEvent
+  sendToDebug: PublishEditorEvent
+  onInspector: OnInspector
+  onPlaytest: OnEditor
+  onDebug: OnDebug
   clearTextEditor: () => void
   refreshEventTable: () => void
 }
@@ -180,33 +289,36 @@ export type EventsTypes = {
 
 export interface IRunContextEditor extends NodeEditor {
   magick: EditorContext
-  abort: Function
+  abort: () => void
 }
+
+export type TaskType = 'output' | 'option'
+export type ConnectionType = 'input' | 'output'
 
 export type DataSocketType = {
   name: SocketNameType
-  taskType: 'output' | 'option'
+  taskType: TaskType
   socketKey: string
-  connectionType: 'input' | 'output'
+  connectionType: ConnectionType
   socketType: SocketType
   useSocketName: boolean
 }
 
-export type MagicNodeInput = Input & { socketType: DataSocketType; }
-export type MagicNodeOutput = Output & { taskType?: 'output' | 'option'; socketType: DataSocketType; }
+export type MagicNodeInput = Input & { socketType: DataSocketType }
+export type MagicNodeOutput = Output & {
+  taskType?: TaskType
+  socketType: DataSocketType
+}
 
 export type MagickNode = Node & {
   inspector: Inspector
   display: (content: string) => void
   outputs: MagicNodeOutput[]
-  data: {
-    outputs?: DataSocketType[]
-    inputs?: DataSocketType[]
-  }
+  data: WorkerData
   category?: string
   displayName?: string
   info: string
-  subscription: Function
+  subscription: PubSubCallback
   console: MagickConsole
 }
 
@@ -236,42 +348,28 @@ export type ModelCompletionOpts = {
   logitBias?: { [token: string]: number }
 }
 
-export type OpenAIResultChoice = {
-  text: string
-  index: number
-  logprobs: number[]
-  top_logprobs: any[]
-  text_offset: number[]
-}
-
-export type OpenAIResponse = {
-  id: string
-  object: string
-  created: number
-  model: string
-  choices: OpenAIResultChoice[]
-  finish_reason: string
-}
-
 export type Subspell = { name: string; id: string; data: GraphData }
 
 export type GraphData = Data
 
-export type InputTaskType = 'input' | 'option'
-export type OutputTaskType = 'output' | 'option'
+export type IgnoredList =
+  | {
+      name: string
+    }[]
+  | string[]
 
-export type ComponentData<T=InputTaskType|OutputTaskType> =  Record<string, unknown> & {
-  ignored?: string[]
+export type ComponentData<T = TaskType> = Record<string, unknown> & {
+  ignored?: IgnoredList
   socketType?: SocketType
   taskType?: T
   icon?: string
 }
 
-export type InputComponentData = ComponentData<InputTaskType>
-export type OutputComponentData = ComponentData<OutputTaskType>
+export type InputComponentData = ComponentData<TaskType>
+export type OutputComponentData = ComponentData<TaskType>
 
 export type ModuleComponent = MagickComponent<unknown> & {
-  run: Function
+  run: (node: MagickNode, data?: unknown) => Promise<void>
 }
 
 export type NodeConnections = {
@@ -287,10 +385,40 @@ export type NodeOutputs = {
   }
 }
 
-export type NodeData = {
+export type MagickNodeData = {
   socketKey?: string
   name?: string
-  [DataKey: string]: any
+  isInput?: boolean
+  useDefault?: boolean
+  defaultValue?: string
+  element?: number
+  [DataKey: string]: unknown
+}
+
+export type WorkerData = NodeData & {
+  // outputs: DataSocketOutput
+  // inputs: DataSocketInput
+  spell?: string
+  data?: MagickNodeData
+  [key: string]: unknown
+}
+
+export function AsDataSocket(data: InputsData | OutputsData): DataSocketType[] {
+  return data as unknown as DataSocketType[]
+}
+
+export function AsInputsData(data: DataSocketType[]): InputsData {
+  return data as unknown as InputsData
+}
+
+export function AsOutputsData(data: DataSocketType[]): OutputsData {
+  return data as unknown as OutputsData
+}
+
+export function AsInputsAndOutputsData(
+  data: DataSocketType[]
+): InputsData & OutputsData {
+  return data as unknown as InputsData & OutputsData
 }
 
 export type Module = { name: string; id: string; data: Data }
@@ -304,6 +432,9 @@ export type Spell = {
   hash?: string
   projectId: string
 }
+
+export type MagickSpellInput = Record<string, unknown>
+export type MagickSpellOutput = Record<string, unknown>
 
 export type NewSpellArgs = {
   name: string
@@ -323,9 +454,7 @@ export type TaskOutput = {
   key: string
 }
 
-export type ModuleWorkerOutput = WorkerOutputs & {
-  [key: string]: any
-}
+export type ModuleWorkerOutput = WorkerOutputs
 
 export type MagickWorkerInput = string | unknown | MagickReteInput
 export type MagickWorkerInputs = { [key: string]: MagickWorkerInput[] }
@@ -333,59 +462,15 @@ export type MagickWorkerOutputs = WorkerOutputs & {
   [key: string]: TaskOutput
 }
 
-// Type definitions for PubSubJS 1.8.0
-// Project: https://github.com/mroderick/PubSubJS
-// Definitions by: Boris Yankov <https://github.com/borisyankov>
-//                 Matthias Lindinger <https://github.com/morpheus-87>
-// Definitions: https://github.com/DefinitelyTyped/DefinitelyTyped
-
-export interface PubSubBase
-  extends CountSubscriptions,
-  ClearAllSubscriptions,
-  GetSubscriptions,
-  Publish,
-  Subscribe,
-  Unsubscribe {
-  name: string
-}
-
-interface CountSubscriptions {
-  countSubscriptions(token: any): number
-}
-
-interface ClearAllSubscriptions {
-  clearAllSubscriptions(token?: any): void
-}
-
-interface GetSubscriptions {
-  getSubscriptions(token: any): any[]
-}
-
-interface Publish {
-  publish(message: string | symbol, data?: any): boolean
-
-  publishSync(message: string | symbol, data?: any): boolean
-}
-
-interface Subscribe {
-  subscribe(message: string | symbol, func: Function): string
-
-  subscribeOnce(message: string | symbol, func: Function): any
-}
-
-interface Unsubscribe {
-  unsubscribe(tokenOrFunction: any): any
-}
-
 // Go-inspired function return
 export type GoFn = [
   boolean, // Ok
   string | null, // Message
-  any // body
+  unknown // body
 ]
 
 // Elixir-inspired function return
-export type ExFn = [true, any] | [false, string]
+export type ExFn = [true, unknown] | [false, string]
 
 export type SearchSchema = {
   title: string
@@ -397,11 +482,132 @@ export type ClassifierSchema = {
   examples: string[] | string
 }
 
-type MessagingWebhookBody = {
+export type MessagingWebhookBody = {
   MessageSid: string
   Body: string
   From: string
   To: string
 }
 
-export type MessagingRequest = any
+export type CompletionType = 'image' | 'text'
+
+export type ImageCompletionSubtype = 'text2image' | 'image2image' | 'image2text'
+
+export type TextCompletionSubtype = 'text' | 'embedding' | 'chat'
+
+export type CompletionSocket = {
+  socket: string
+  name: string
+  type: Socket
+}
+
+export type CompletionInspectorControls = {
+  type: any
+  dataKey: string
+  name: string
+  icon: string
+  defaultValue: any
+}
+
+export type CompletionProvider = {
+  type: CompletionType
+  subtype: ImageCompletionSubtype | TextCompletionSubtype
+  handler?: Function // server only
+  inspectorControls?: CompletionInspectorControls[] // client only
+  inputs: CompletionSocket[]
+  outputs: CompletionSocket[]
+  models: string[]
+}
+
+export type TextCompletionData = {
+  model: string
+  prompt: string
+  temperature: number
+  max_tokens: number
+  top_p: number
+  frequency_penalty: number
+  presence_penalty: number
+  stop: string[]
+  apiKey?: string
+}
+
+export type ChatMessage = {
+  role: 'system' | 'user' | 'assistant' | string
+  content: string
+}
+
+export type ChatCompletionData = {
+  model: string
+  systemMessage: string
+  conversationMessages: ChatMessage[]
+  userMessage: string
+  temperature: number
+  max_tokens: number
+  top_p: number
+  frequency_penalty: number
+  presence_penalty: number
+  stop: string[]
+  apiKey?: string
+}
+
+export type EmbeddingData = {
+  input: string
+  model?: string
+  apiKey: string
+}
+
+export type CompletionHandlerInputData = {
+  node: NodeData
+  inputs: MagickWorkerInputs
+  outputs: MagickWorkerOutputs
+  context: {
+    module: any
+    secrets: Record<string, string>
+    projectId: string
+    magick: EngineContext
+  }
+}
+
+export type MessagingRequest = unknown
+
+export type RequestPayload = {
+  projectId: string
+  requestData: string
+  responseData?: string
+  model: string
+  startTime: number
+  status?: string
+  statusCode?: number
+  parameters?: string
+  provider?: string
+  type?: string
+  hidden?: boolean
+  processed?: boolean
+  totalTokens?: number
+  spell?: any
+  nodeId?: number
+}
+
+export type RequestData = {
+  spell: string
+  projectId: string
+  nodeId: number
+}
+
+export interface MagickTask extends Task {
+  outputs?: { [key: string]: string }
+  init?: (task?: MagickTask, node?: MagickNode) => void
+  onRun?: (
+    node: NodeData,
+    task: Task,
+    data: unknown,
+    socketInfo: TaskSocketInfo
+  ) => void
+}
+
+export interface ModuleOptions {
+  nodeType: 'input' | 'output' | 'triggerIn' | 'triggerOut' | 'module'
+  socket?: Socket
+  skip?: boolean
+  hide?: boolean
+}

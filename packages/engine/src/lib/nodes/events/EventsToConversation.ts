@@ -1,8 +1,8 @@
 import Rete from 'rete'
 
-import { MagickComponent } from '../../magick-component'
+import { MagickComponent } from '../../engine'
 import { arraySocket, stringSocket, triggerSocket } from '../../sockets'
-import { MagickNode, MagickWorkerInputs, NodeData } from '../../types'
+import { MagickNode, MagickWorkerInputs, WorkerData } from '../../types'
 const info = `Join an array of events into a conversation formatted for prompt injection.`
 
 type WorkerReturn = {
@@ -21,7 +21,7 @@ export class EventsToConversation extends MagickComponent<WorkerReturn> {
       },
     }
 
-    this.category = 'Events'
+    this.category = 'Event'
     this.info = info
   }
 
@@ -39,12 +39,11 @@ export class EventsToConversation extends MagickComponent<WorkerReturn> {
 
   // the worker contains the main business logic of the node.  It will pass those results
   // to the outputs to be consumed by any connected components
-  worker(node: NodeData, inputs: MagickWorkerInputs & { events: any[] }) {
+  worker(node: WorkerData, inputs: MagickWorkerInputs & { events: unknown[] }) {
 
     const events = inputs.events[0];
     let conversation = '';
     //Events.rows when the data is fetched using embedding
-    
     if (Array.isArray(events)){
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       //@ts-ignore
@@ -63,7 +62,9 @@ export class EventsToConversation extends MagickComponent<WorkerReturn> {
         conversation += event.sender + ': ' + event.content + '\n';
       });
     } else {
-      conversation += events.sender + ': ' + events.content + '\n';
+      // TODO: Check if Events is correct type
+      type Events = { sender: string; content: string }
+      conversation += (events as Events).sender + ': ' + (events as Events).content + '\n';
     }
     return {
         conversation,

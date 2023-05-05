@@ -2,18 +2,17 @@ import { isEmpty } from 'lodash'
 import Rete from 'rete'
 import { v4 as uuidv4 } from 'uuid'
 
-import {
-  NodeData,
-  MagickNode,
-  MagickWorkerInputs,
-  MagickWorkerOutputs,
-} from '../../types'
 import { DropdownControl } from '../../dataControls/DropdownControl'
-import { pluginManager } from '../../plugin'
 import { InputControl } from '../../dataControls/InputControl'
 import { SwitchControl } from '../../dataControls/SwitchControl'
-import { anySocket, triggerSocket, eventSocket } from '../../sockets'
-import { MagickComponent, MagickTask } from '../../magick-component'
+import { MagickComponent } from '../../engine'
+import { pluginManager } from '../../plugin'
+import { anySocket, triggerSocket } from '../../sockets'
+import {
+  MagickNode, MagickTask, MagickWorkerInputs,
+  MagickWorkerOutputs,
+  WorkerData
+} from '../../types'
 const info = `The input component allows you to pass a single value to your graph.  You can set a default value to fall back to if no value is provided at runtime.  You can also turn the input on to receive data from the playtest input.`
 
 type InputReturn = {
@@ -21,7 +20,7 @@ type InputReturn = {
 }
 
 const defaultInputTypes = [
-  { name: 'Default', trigger: true, socket: eventSocket },
+  { name: 'Default', trigger: true, socket: anySocket },
 ]
 
 export class InputComponent extends MagickComponent<InputReturn> {
@@ -111,7 +110,7 @@ export class InputComponent extends MagickComponent<InputReturn> {
       // console.log('oldConnections', oldConnections)
     }
 
-    inputType.onData((node.data.name as any).replace('Input - ', ''))
+    inputType.onData((node.data.name).replace('Input - ', ''))
 
     const toggleDefault = new SwitchControl({
       dataKey: 'useDefault',
@@ -140,7 +139,7 @@ export class InputComponent extends MagickComponent<InputReturn> {
   }
 
   worker(
-    node: NodeData,
+    node: WorkerData,
     _inputs: MagickWorkerInputs,
     outputs: MagickWorkerOutputs,
     { data }: { data: string | undefined }
